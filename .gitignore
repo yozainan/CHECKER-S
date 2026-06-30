@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+.env
+.env.*
+venv/
+env/
+.venv/
+
+# Node / npm
+node_modules/
+dist/
+.cache/
+*.local
+
+# Vite build output
+apps/client/dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test artifacts
+.pytest_cache/
+*.coverage
+htmlcov/
+
+# Logs
+*.log
