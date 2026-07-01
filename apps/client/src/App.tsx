@@ -160,15 +160,155 @@ const HuffNotification: React.FC = () => {
   );
 };
 
+/* ──────────── CHAIN CHOICE MODAL ──────────── */
+const ChainChoiceModal: React.FC = () => {
+  const { pendingChainChoice, stopChain, continueChain } = useGameStore();
+
+  if (!pendingChainChoice) return null;
+
+  // When there are multiple chain targets, auto-pick the first for "Eat 2"
+  // (the player may also click on the board — we just need to dismiss or confirm)
+  const firstTarget = pendingChainChoice.targets[0];
+
+  return (
+    <motion.div
+      className="chain-modal-overlay"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <motion.div
+        className="chain-modal"
+        initial={{ scale: 0.88, y: 12, opacity: 0 }}
+        animate={{ scale: 1, y: 0, opacity: 1 }}
+        exit={{ scale: 0.88, y: 12, opacity: 0 }}
+        transition={{ type: 'spring', stiffness: 420, damping: 28 }}
+      >
+        {/* Glow icon */}
+        <div className="chain-modal-icon">⚡</div>
+        <div className="chain-modal-title">Chain Jump!</div>
+        <div className="chain-modal-desc">
+          You can capture <strong>another piece</strong> in the same move.<br />
+          What do you want to do?
+        </div>
+        <div className="chain-modal-btns">
+          <button
+            className="chain-btn-continue"
+            onClick={() => continueChain(firstTarget)}
+          >
+            <span className="chain-btn-icon">🔥</span>
+            <span>
+              <strong>Eat 2 pieces</strong>
+              <small>Continue the chain jump</small>
+            </span>
+          </button>
+          <button
+            className="chain-btn-stop"
+            onClick={stopChain}
+          >
+            <span className="chain-btn-icon">✋</span>
+            <span>
+              <strong>Eat 1 piece</strong>
+              <small>End my turn here</small>
+            </span>
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+/* ──────────── SETTINGS PANEL ──────────── */
+interface SettingsPanelProps {
+  onClose: () => void;
+}
+const SettingsPanel: React.FC<SettingsPanelProps> = ({ onClose }) => {
+  const { huffEnabled, setHuffEnabled, timeLimit, changeTimeLimit } = useGameStore();
+
+  return (
+    <motion.div
+      className="settings-overlay"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.div
+        className="settings-panel"
+        initial={{ x: 60, opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        exit={{ x: 60, opacity: 0 }}
+        transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="settings-header">
+          <span className="settings-title">⚙ Settings</span>
+          <button className="settings-close" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="settings-section-label">RULES</div>
+
+        <div className="settings-row">
+          <div className="settings-row-info">
+            <div className="settings-row-name">Huff Rule</div>
+            <div className="settings-row-desc">
+              When enabled, if you skip a mandatory capture, your opponent may remove ("huff") that piece as a penalty.
+            </div>
+          </div>
+          <button
+            className={`settings-toggle ${huffEnabled ? 'toggle-on' : 'toggle-off'}`}
+            onClick={() => setHuffEnabled(!huffEnabled)}
+            aria-label={huffEnabled ? 'Disable Huff rule' : 'Enable Huff rule'}
+          >
+            <span className="toggle-thumb" />
+          </button>
+        </div>
+
+        <div className="settings-row" style={{ flexDirection: 'column', gap: 8, alignItems: 'stretch', borderBottom: 'none' }}>
+          <div className="settings-row-info">
+            <div className="settings-row-name">Match Time Limit</div>
+            <div className="settings-row-desc">
+              Select the maximum time allowed for each player (chess clock).
+            </div>
+          </div>
+          <select
+            className="settings-select"
+            value={timeLimit === null ? 'none' : String(timeLimit)}
+            onChange={e => {
+              const val = e.target.value;
+              changeTimeLimit(val === 'none' ? null : Number(val));
+            }}
+          >
+            <option value="none">None (Infinite/Classic)</option>
+            <option value="60">1 Minute</option>
+            <option value="180">3 Minutes</option>
+            <option value="300">5 Minutes</option>
+            <option value="600">10 Minutes</option>
+            <option value="900">15 Minutes</option>
+          </select>
+        </div>
+
+        <div className="settings-footer">
+          Changes apply immediately to the current game.
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
 /* ──────────── GAME ──────────── */
 const Game: React.FC = () => {
   const {
     turn, winner, playerColor, roomId,
     redPieces, blkPieces,
+    capturedByRed, capturedByBlack,
     elapsed, paused, resetGame, disconnect,
     tickTimer, togglePause, error, huffOffer,
+    pendingChainChoice,
+    timeLeftRed, timeLeftBlack, timeLimit,
   } = useGameStore();
   const [copied, setCopied] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Timer tick
   useEffect(() => {
@@ -189,10 +329,6 @@ const Game: React.FC = () => {
     setTimeout(() => setCopied(false), 2500);
   };
 
-  // Captured piece counts for display
-  const capturedByBlack = 12 - redPieces;   // Red pieces Black took
-  const capturedByRed   = 12 - blkPieces;   // Black pieces Red took
-
   return (
     <div className="app">
       {/* ── Left sidebar ── */}
@@ -207,16 +343,10 @@ const Game: React.FC = () => {
             <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>
           </svg>
         </button>
-        <button
-          className="sidebar-btn"
-          onClick={() => {
-            const colorName = playerColor === 'R' ? 'Red' : 'Black';
-            alert(`Playing as: ${colorName}\nRoom: ${roomId}\n${turn === playerColor ? 'YOUR TURN' : "Opponent's turn"}`);
-          }}
-          title="Info"
-        >
+        {/* Settings button */}
+        <button className="sidebar-btn" onClick={() => setShowSettings(true)} title="Settings">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2a7 7 0 0 1 7 7c0 2.6-1.4 4.9-3.5 6.2V17a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-1.8C6.4 13.9 5 11.6 5 9a7 7 0 0 1 7-7zm-2 18h4v1.5a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5V20z"/>
+            <path d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
           </svg>
         </button>
       </nav>
@@ -228,34 +358,69 @@ const Game: React.FC = () => {
         onClick={disconnect}
         title="Quit"
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
         </svg>
       </button>
 
       {/* ── Score panel ── */}
       <div className="score-panel">
-        {/* Black's score (captures against Red) */}
+        {/* Black captured count */}
         <div className="score-card">
           <div className="score-piece-dot blk-dot" />
           <div className="score-label">⚫</div>
-          <div className="score-num">{blkPieces}</div>
-          {capturedByRed > 0 && <div className="score-cap">-{capturedByRed}</div>}
+          <div className="score-num">{capturedByBlack}</div>
+          {capturedByBlack > 0 && (
+            <div className="score-cap-dots">
+              {Array.from({ length: Math.min(capturedByBlack, 12) }).map((_, i) => (
+                <span key={i} className="score-mini-dot red-dot" />
+              ))}
+            </div>
+          )}
+          <div className="score-remaining">{redPieces} left</div>
+          {timeLimit !== null && (
+            <div className={`score-clock ${turn === 'B' ? 'clock-active' : ''}`}>
+              ⏱️ {fmt(timeLeftBlack)}
+            </div>
+          )}
         </div>
+        {/* Red captured count */}
         <div className="score-card">
           <div className="score-piece-dot red-dot" />
           <div className="score-label">🔴</div>
-          <div className="score-num">{redPieces}</div>
-          {capturedByBlack > 0 && <div className="score-cap">-{capturedByBlack}</div>}
+          <div className="score-num">{capturedByRed}</div>
+          {capturedByRed > 0 && (
+            <div className="score-cap-dots">
+              {Array.from({ length: Math.min(capturedByRed, 12) }).map((_, i) => (
+                <span key={i} className="score-mini-dot blk-dot" />
+              ))}
+            </div>
+          )}
+          <div className="score-remaining">{blkPieces} left</div>
+          {timeLimit !== null && (
+            <div className={`score-clock ${turn === 'R' ? 'clock-active' : ''}`}>
+              ⏱️ {fmt(timeLeftRed)}
+            </div>
+          )}
         </div>
       </div>
 
       {/* ── Board ── */}
       <Board />
 
+      {/* ── Chain choice modal ── */}
+      <AnimatePresence>
+        {pendingChainChoice && <ChainChoiceModal key="chain" />}
+      </AnimatePresence>
+
       {/* ── Huff notification ── */}
       <AnimatePresence>
         {huffOffer && <HuffNotification key="huff" />}
+      </AnimatePresence>
+
+      {/* ── Settings panel ── */}
+      <AnimatePresence>
+        {showSettings && <SettingsPanel key="settings" onClose={() => setShowSettings(false)} />}
       </AnimatePresence>
 
       {/* ── Bottom bar ── */}

@@ -67,6 +67,8 @@ export const Board: React.FC = () => {
             else if (isDark && isMyPiece && turn === playerColor && !winner)
               cellClass += ' can-select';
 
+
+
             return (
               <div
                 key={`${r}-${c}`}
@@ -74,11 +76,8 @@ export const Board: React.FC = () => {
                 onClick={() => handleCellClick(r, c)}
                 onMouseEnter={() => handleCellEnter(r, c)}
               >
-                {/* ── Opponent cursor ring ── */}
-                {oppHover && !piece && (
-                  <div className="opponent-cursor-ring" />
-                )}
-                {oppHover && piece && (
+                {/* ── Opponent cursor ring (only on opponent's OWN pieces) ── */}
+                {oppHover && piece !== '' && !isMyPiece && (
                   <div className="opponent-cursor-piece-ring" />
                 )}
 
@@ -107,7 +106,6 @@ export const Board: React.FC = () => {
                       animate={{ scale: 1, opacity: 1 }}
                       exit={{ scale: 0, opacity: 0 }}
                       transition={{ type: 'spring', stiffness: 380, damping: 22 }}
-                      layoutId={`piece-${r}-${c}`}
                     />
                   )}
                 </AnimatePresence>

@@ -177,11 +177,16 @@ class CheckersEngine:
     def get_all_valid_moves(self, color: str) -> Dict[Tuple[int, int], List[Tuple[int, int]]]:
         """
         Return all legal moves for *color* as ``{from_pos: [to_pos, ...]}``.
-        Captures are mandatory — if any exist, only capture moves are returned.
+
+        Captures are NOT mandatory.  A player may slide even when jumps exist.
+        The huff rule (applied externally by the server) penalises skipped captures.
+
+        Mid-chain exception: when active_jumper is set, only that piece may move
+        and only jump continuations are offered (the chain must be resolved first).
         """
         board = self.board
 
-        # Mid multi-jump: only the locked piece may continue
+        # Mid multi-jump: locked piece must continue or the player calls stop_chain
         if self.active_jumper:
             ar, ac = self.active_jumper
             jumps = self._get_jumps(board, ar, ac)
@@ -189,26 +194,18 @@ class CheckersEngine:
                 return {(ar, ac): jumps}
             return {}
 
-        # Collect all capture moves
-        jump_moves: Dict[Tuple[int, int], List[Tuple[int, int]]] = {}
+        # All moves — slides AND jumps (no mandatory capture)
+        all_moves: Dict[Tuple[int, int], List[Tuple[int, int]]] = {}
         for r in range(8):
             for c in range(8):
                 if self.get_piece_owner(board[r][c]) == color:
-                    j = self._get_jumps(board, r, c)
-                    if j:
-                        jump_moves[(r, c)] = j
-        if jump_moves:
-            return jump_moves
-
-        # No captures — collect slides
-        slide_moves: Dict[Tuple[int, int], List[Tuple[int, int]]] = {}
-        for r in range(8):
-            for c in range(8):
-                if self.get_piece_owner(board[r][c]) == color:
-                    s = self._get_slides(board, r, c)
-                    if s:
-                        slide_moves[(r, c)] = s
-        return slide_moves
+                    destinations = (
+                        list(self._get_jumps(board, r, c)) +
+                        list(self._get_slides(board, r, c))
+                    )
+                    if destinations:
+                        all_moves[(r, c)] = destinations
+        return all_moves
 
     # ------------------------------------------------------------------ #
     #  Move execution                                                      #
@@ -265,17 +262,32 @@ class CheckersEngine:
     def huff_piece(self, r: int, c: int) -> bool:
         """
         Huffing penalty: remove the piece at (r, c).
-        Valid only when the piece belongs to the player whose turn it currently is.
-        Switches the turn after removal.
+
+        Unlike the old implementation, this does NOT switch the turn — the
+        turn was already advanced by the slide move that triggered the huff.
+        The server is responsible for validating that the huff is legitimate
+        (correct player requesting, correct piece position).
         """
         if self.winner:
             return False
         piece = self.board[r][c]
         if not piece:
             return False
-        if self.get_piece_owner(piece) != self.turn:
-            return False
         self.board[r][c] = ''
+        self.active_jumper = None
+        self._check_winner()
+        return True
+
+    def stop_chain(self) -> bool:
+        """
+        Allow the active jumper to voluntarily end a multi-jump chain.
+        Clears active_jumper and switches turn to the opponent.
+        Returns True only when there IS an active chain in progress.
+        """
+        if self.winner:
+            return False
+        if not self.active_jumper:
+            return False
         self.active_jumper = None
         self.turn = 'B' if self.turn == 'R' else 'R'
         self._check_winner()

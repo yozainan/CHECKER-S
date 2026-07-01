@@ -113,12 +113,13 @@ class TestCaptures(unittest.TestCase):
         self.assertEqual(self.e.board[4][3], "")   # captured
         self.assertEqual(self.e.board[3][4], "R")
 
-    def test_mandatory_capture_prevents_slide(self):
-        # If a jump exists, a plain slide must be rejected
+    def test_slide_allowed_when_jump_exists(self):
+        # Rule change: captures are no longer mandatory.
+        # A plain slide must SUCCEED even when a jump is available.
+        # (The huff rule, handled by the server, penalises the skipped capture.)
         self.e.board[4][3] = "B"   # Red at (5,2) can jump to (3,4)
-        # Attempting a plain slide for a different piece must fail because jump is mandatory
-        ok = self.e.make_move(5, 0, 4, 1)   # slide when jump available
-        self.assertFalse(ok)
+        ok = self.e.make_move(5, 0, 4, 1)   # slide a DIFFERENT piece
+        self.assertTrue(ok, "Slide must be allowed even when a jump exists")
 
     def test_capture_switches_turn_when_no_further_jumps(self):
         self.e.board[4][3] = "B"
@@ -309,16 +310,18 @@ class TestGetAllValidMoves(unittest.TestCase):
         moves = self.e.get_all_valid_moves("B")
         self.assertGreater(len(moves), 0)
 
-    def test_jump_only_returned_when_available(self):
-        """When a jump is available, get_all_valid_moves returns only jumps."""
+    def test_all_pieces_appear_when_jump_available(self):
+        """With no mandatory capture, ALL pieces with any move appear in valid_moves."""
         self.e.board = [['' for _ in range(8)] for _ in range(8)]
         self.e.board[5][2] = "R"
-        self.e.board[4][3] = "B"   # capturable
-        self.e.board[7][0] = "R"   # another Red with no jump
+        self.e.board[4][3] = "B"   # capturable by R@(5,2)
+        self.e.board[7][0] = "R"   # another Red with only a slide
         moves = self.e.get_all_valid_moves("R")
-        # Only the jumping piece should appear
-        self.assertIn((5, 2), moves)
-        self.assertNotIn((7, 0), moves)
+        # Both pieces must appear (slides are now legal even when jumps exist)
+        self.assertIn((5, 2), moves, "Jumping piece must have moves")
+        self.assertIn((7, 0), moves, "Non-jumping piece must ALSO appear (no mandatory rule)")
+        # Jump must still be in the jumping piece's options
+        self.assertIn((3, 4), moves[(5, 2)], "Jump target must be listed for (5,2)")
 
 
 class TestHelpers(unittest.TestCase):

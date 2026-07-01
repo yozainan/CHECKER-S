@@ -15,15 +15,41 @@ export interface HuffOffer {
   expiresAt: number;  // Date.now() + ms
 }
 
+export interface ChainChoice {
+  /** The active jumper position (piece that just captured). */
+  jumperPos: Pos;
+  /** All reachable landing squares from the active jumper. */
+  targets: Pos[];
+}
+
+export interface ActivePiece {
+  id: string;
+  r: number;
+  c: number;
+  type: Piece;
+}
+
 export interface GameState {
   board: Board;
   turn: Color;
   winner: string | null;
   activeJumper: Pos | null;
 
+  // Active pieces tracking for smooth animations
+  pieces: ActivePiece[];
+
+  // Chess clock remaining timers (in seconds)
+  timeLeftRed: number;
+  timeLeftBlack: number;
+  timeLimit: number | null; // Selected time limit (e.g. 300) or null (none)
+
   // Piece counts (computed from live board — always accurate)
   redPieces: number;   // Red pieces remaining on board
   blkPieces: number;   // Black pieces remaining on board
+
+  // Captured piece counts (starts at 0, +1 per capture)
+  capturedByRed: number;   // Black pieces Red has taken
+  capturedByBlack: number; // Red pieces Black has taken
 
   // Cells that just got captured (for flash animation)
   capturedCells: Pos[];
@@ -43,6 +69,10 @@ export interface GameState {
 
   opponentCursor: Pos | null;   // Cell the opponent is hovering over
   huffOffer: HuffOffer | null;  // Pending huff offer from server
+  huffEnabled: boolean;         // Whether the huff rule is active (settings toggle)
+
+  // Multi-jump chain choice (populated when activeJumper has further jumps)
+  pendingChainChoice: ChainChoice | null;
 
   elapsed: number;
   paused: boolean;
@@ -59,8 +89,12 @@ export interface GameState {
   sendCursor: (r: number, c: number) => void;
   acceptHuff: () => void;
   dismissHuff: () => void;
+  setHuffEnabled: (v: boolean) => void;
+  stopChain: () => void;
+  continueChain: (toPos: Pos) => void;
   tickTimer: () => void;
   togglePause: () => void;
+  changeTimeLimit: (limit: number | null) => void;
 }
 
 const EMPTY_BOARD: Board = Array(8).fill(null).map(() => Array(8).fill(''));
@@ -154,20 +188,16 @@ function computeValidTargets(
   const p = board[r]?.[c];
   if (!p || getOwner(p) !== turn) return [];
 
-  if (activeJumper && (activeJumper[0] !== r || activeJumper[1] !== c)) return [];
-
-  // Check if ANY piece of this player can jump
-  let anyJump = false;
-  if (!activeJumper) {
-    for (let i = 0; i < 8 && !anyJump; i++)
-      for (let j = 0; j < 8 && !anyJump; j++)
-        if (getOwner(board[i][j]) === turn && getJumps(board, i, j).length > 0)
-          anyJump = true;
+  // Mid-chain: only the active jumper piece may continue, and only via jumps
+  if (activeJumper) {
+    if (activeJumper[0] !== r || activeJumper[1] !== c) return [];
+    return getJumps(board, r, c);
   }
 
-  const jumps = getJumps(board, r, c);
-  if (anyJump || activeJumper) return jumps;
-  return getSlides(board, r, c);
+  // No mandatory capture — show ALL legal destinations (jumps + slides)
+  const jumps  = getJumps(board, r, c);
+  const slides = getSlides(board, r, c);
+  return [...jumps, ...slides];
 }
 
 /* ── Notation ── */
@@ -188,14 +218,68 @@ function countPieces(board: Board): { red: number; blk: number } {
   return { red, blk };
 }
 
+/* ── Active pieces matching for smooth transitions ── */
+export function updateActivePieces(oldPieces: ActivePiece[], newBoard: Board): ActivePiece[] {
+  const result: ActivePiece[] = [];
+  const unmatched = [...oldPieces];
+
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const type = newBoard[r][c];
+      if (type !== '') {
+        const owner = getOwner(type);
+        // Find the closest unmatched piece of the same color
+        let bestIdx = -1;
+        let minDist = Infinity;
+        for (let i = 0; i < unmatched.length; i++) {
+          const p = unmatched[i];
+          if (getOwner(p.type) === owner) {
+            const dist = Math.abs(p.r - r) + Math.abs(p.c - c);
+            if (dist < minDist) {
+              minDist = dist;
+              bestIdx = i;
+            }
+          }
+        }
+
+        if (bestIdx !== -1) {
+          const matched = unmatched.splice(bestIdx, 1)[0];
+          result.push({
+            id: matched.id,
+            r,
+            c,
+            type,
+          });
+        } else {
+          // If no match found (initial load / sync issues), create a new one
+          const newId = `${owner}-${Math.random().toString(36).substr(2, 9)}`;
+          result.push({
+            id: newId,
+            r,
+            c,
+            type,
+          });
+        }
+      }
+    }
+  }
+  return result;
+}
+
 /* ── Store ── */
 export const useGameStore = create<GameState>((set, get) => ({
   board: EMPTY_BOARD,
   turn: 'R',
   winner: null,
   activeJumper: null,
+  pieces: [],
+  timeLeftRed: 300,
+  timeLeftBlack: 300,
+  timeLimit: 300,
   redPieces: 12,
   blkPieces: 12,
+  capturedByRed: 0,
+  capturedByBlack: 0,
   capturedCells: [],
   moveHistory: [],
   roomId: '',
@@ -209,6 +293,8 @@ export const useGameStore = create<GameState>((set, get) => ({
   validTargets: [],
   opponentCursor: null,
   huffOffer: null,
+  huffEnabled: true,
+  pendingChainChoice: null,
   elapsed: 0,
   paused: false,
 
@@ -258,9 +344,16 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({
       roomId: room, playerColor: color, error: null,
       connected: false, selectedCell: null, validTargets: [],
-      redPieces: 12, blkPieces: 12, capturedCells: [],
+      redPieces: 12, blkPieces: 12,
+      capturedByRed: 0, capturedByBlack: 0,
+      capturedCells: [],
+      pieces: [],
+      timeLeftRed: 300,
+      timeLeftBlack: 300,
+      timeLimit: 300,
       moveHistory: [], elapsed: 0, isMatchmaking: false,
       opponentCursor: null, huffOffer: null,
+      pendingChainChoice: null,
     });
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -289,16 +382,46 @@ export const useGameStore = create<GameState>((set, get) => ({
 
           const { red, blk } = countPieces(newBoard);
 
+          // Captured counts: accumulate from previous (not recomputed from scratch)
+          // We use 12 - remaining to always stay accurate even on join
+          const capturedByRed   = 12 - blk;   // Black pieces Red has taken
+          const capturedByBlack = 12 - red;    // Red pieces Black has taken
+
+          const newActiveJumper: Pos | null = payload.state.active_jumper;
+
+          // Check if the active jumper has further chain-jump options (for modal)
+          let pendingChainChoice: ChainChoice | null = null;
+          if (newActiveJumper && payload.state.turn === prev.playerColor) {
+            const [jr, jc] = newActiveJumper;
+            const chainTargets = getJumps(newBoard, jr, jc);
+            if (chainTargets.length > 0) {
+              pendingChainChoice = { jumperPos: newActiveJumper, targets: chainTargets };
+            }
+          }
+
+          const timeLimit = payload.state.time_limit !== undefined ? payload.state.time_limit : prev.timeLimit;
+          const timeLeftRed = payload.state.time_red !== undefined ? payload.state.time_red : prev.timeLeftRed;
+          const timeLeftBlack = payload.state.time_black !== undefined ? payload.state.time_black : prev.timeLeftBlack;
+          const huffEnabled = payload.state.huff_enabled !== undefined ? payload.state.huff_enabled : prev.huffEnabled;
+
           set({
             board: newBoard,
+            pieces: updateActivePieces(prev.pieces, newBoard),
+            timeLeftRed,
+            timeLeftBlack,
+            timeLimit,
+            huffEnabled,
             turn: payload.state.turn,
             winner: payload.state.winner,
-            activeJumper: payload.state.active_jumper,
+            activeJumper: newActiveJumper,
             redPieces: red,
             blkPieces: blk,
+            capturedByRed,
+            capturedByBlack,
             capturedCells: newlyCaptured,
             selectedCell: null,
             validTargets: [],
+            pendingChainChoice,
             error: null,
           });
 
@@ -328,6 +451,9 @@ export const useGameStore = create<GameState>((set, get) => ({
 
         /* ── Huff offer ── */
         } else if (payload.type === 'huff_offer') {
+          // If huff rule is disabled in settings, silently ignore
+          if (!get().huffEnabled) return;
+
           const expiresAt = Date.now() + payload.expires_in * 1000;
           set({ huffOffer: { pos: payload.pos as Pos, expiresAt } });
           // Auto-dismiss when expired
@@ -347,7 +473,10 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   /* ── Select cell / compute valid targets ── */
   selectCell: (r, c) => {
-    const { board, turn, playerColor, activeJumper, selectedCell, validTargets, makeMove } = get();
+    const { board, turn, playerColor, activeJumper, selectedCell, validTargets, makeMove, pendingChainChoice } = get();
+
+    // If chain choice modal is showing, ignore board clicks
+    if (pendingChainChoice) return;
 
     if (selectedCell) {
       const isTarget = validTargets.some(([tr, tc]) => tr === r && tc === c);
@@ -378,20 +507,45 @@ export const useGameStore = create<GameState>((set, get) => ({
     const notation = toNotation(fromPos[0], fromPos[1], toPos[0], toPos[1]);
     set({
       selectedCell: null, validTargets: [],
+      pendingChainChoice: null,
       moveHistory: [...moveHistory, { player: playerColor!, notation }]
     });
     socket.send(JSON.stringify({ type: 'move', from_pos: fromPos, to_pos: toPos }));
   },
 
+  /* ── Stop chain (eat 1, end turn) ── */
+  stopChain: () => {
+    const { socket, playerColor, turn } = get();
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    if (turn !== playerColor) return;
+    set({ pendingChainChoice: null, selectedCell: null, validTargets: [] });
+    socket.send(JSON.stringify({ type: 'stop_chain' }));
+  },
+
+  /* ── Continue chain (eat 2, make next jump) ── */
+  continueChain: (toPos: Pos) => {
+    const { activeJumper, makeMove, pendingChainChoice } = get();
+    if (!activeJumper || !pendingChainChoice) return;
+    // makeMove will clear pendingChainChoice and send the move
+    makeMove(activeJumper, toPos);
+  },
+
   /* ── Reset ── */
   resetGame: () => {
-    const { socket } = get();
+    const { socket, timeLimit } = get();
     if (socket && socket.readyState === WebSocket.OPEN)
       socket.send(JSON.stringify({ type: 'reset' }));
     set({
       selectedCell: null, validTargets: [],
-      redPieces: 12, blkPieces: 12, capturedCells: [],
+      winner: null,
+      redPieces: 12, blkPieces: 12,
+      capturedByRed: 0, capturedByBlack: 0,
+      capturedCells: [],
+      pieces: [],
+      timeLeftRed: timeLimit ?? 300,
+      timeLeftBlack: timeLimit ?? 300,
       moveHistory: [], elapsed: 0, huffOffer: null,
+      pendingChainChoice: null,
     });
   },
 
@@ -404,9 +558,16 @@ export const useGameStore = create<GameState>((set, get) => ({
       socket: null, matchmakeSocket: null, connected: false, isMatchmaking: false,
       board: EMPTY_BOARD, turn: 'R', winner: null, activeJumper: null,
       selectedCell: null, validTargets: [],
-      redPieces: 12, blkPieces: 12, capturedCells: [],
+      pieces: [],
+      timeLeftRed: 300,
+      timeLeftBlack: 300,
+      timeLimit: 300,
+      redPieces: 12, blkPieces: 12,
+      capturedByRed: 0, capturedByBlack: 0,
+      capturedCells: [],
       moveHistory: [], roomId: '', playerColor: null,
       error: null, elapsed: 0, opponentCursor: null, huffOffer: null,
+      pendingChainChoice: null,
     });
   },
 
@@ -430,11 +591,51 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   dismissHuff: () => set({ huffOffer: null }),
 
+  /* ── Huff enabled toggle ── */
+  setHuffEnabled: (v: boolean) => {
+    set({ huffEnabled: v });
+    // If disabling, clear any pending offer locally
+    if (!v) set({ huffOffer: null });
+    // Sync with server so AI respects the setting too
+    const { socket, timeLimit } = get();
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: 'settings', time_limit: timeLimit, huff_enabled: v }));
+    }
+  },
+
   /* ── Timer ── */
   tickTimer: () => {
-    const { paused, winner } = get();
-    if (!paused && !winner) set(s => ({ elapsed: s.elapsed + 1 }));
+    const { paused, winner, timeLimit, turn } = get();
+    if (paused || winner) return;
+
+    set(s => {
+      const nextElapsed = s.elapsed + 1;
+      
+      // If chess clock is active, let's also decrement locally for smooth visual countdown in real-time
+      if (timeLimit) {
+        if (turn === 'R') {
+          return {
+            elapsed: nextElapsed,
+            timeLeftRed: Math.max(0, s.timeLeftRed - 1)
+          };
+        } else {
+          return {
+            elapsed: nextElapsed,
+            timeLeftBlack: Math.max(0, s.timeLeftBlack - 1)
+          };
+        }
+      }
+      return { elapsed: nextElapsed };
+    });
   },
 
   togglePause: () => set(s => ({ paused: !s.paused })),
+
+  changeTimeLimit: (limit: number | null) => {
+    const { socket } = get();
+    set({ timeLimit: limit, timeLeftRed: limit ?? 300, timeLeftBlack: limit ?? 300 });
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: 'settings', time_limit: limit }));
+    }
+  },
 }));
