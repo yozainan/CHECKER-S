@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useGameStore } from './store/useGameStore';
 import { Board } from './components/Board';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useSoundManager } from './hooks/useSoundManager';
 
 /* ── Format seconds as MM:SS ── */
 function fmt(s: number) {
@@ -160,64 +161,6 @@ const HuffNotification: React.FC = () => {
   );
 };
 
-/* ──────────── CHAIN CHOICE MODAL ──────────── */
-const ChainChoiceModal: React.FC = () => {
-  const { pendingChainChoice, stopChain, continueChain } = useGameStore();
-
-  if (!pendingChainChoice) return null;
-
-  // When there are multiple chain targets, auto-pick the first for "Eat 2"
-  // (the player may also click on the board — we just need to dismiss or confirm)
-  const firstTarget = pendingChainChoice.targets[0];
-
-  return (
-    <motion.div
-      className="chain-modal-overlay"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-    >
-      <motion.div
-        className="chain-modal"
-        initial={{ scale: 0.88, y: 12, opacity: 0 }}
-        animate={{ scale: 1, y: 0, opacity: 1 }}
-        exit={{ scale: 0.88, y: 12, opacity: 0 }}
-        transition={{ type: 'spring', stiffness: 420, damping: 28 }}
-      >
-        {/* Glow icon */}
-        <div className="chain-modal-icon">⚡</div>
-        <div className="chain-modal-title">Chain Jump!</div>
-        <div className="chain-modal-desc">
-          You can capture <strong>another piece</strong> in the same move.<br />
-          What do you want to do?
-        </div>
-        <div className="chain-modal-btns">
-          <button
-            className="chain-btn-continue"
-            onClick={() => continueChain(firstTarget)}
-          >
-            <span className="chain-btn-icon">🔥</span>
-            <span>
-              <strong>Eat 2 pieces</strong>
-              <small>Continue the chain jump</small>
-            </span>
-          </button>
-          <button
-            className="chain-btn-stop"
-            onClick={stopChain}
-          >
-            <span className="chain-btn-icon">✋</span>
-            <span>
-              <strong>Eat 1 piece</strong>
-              <small>End my turn here</small>
-            </span>
-          </button>
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-};
-
 /* ──────────── SETTINGS PANEL ──────────── */
 interface SettingsPanelProps {
   onClose: () => void;
@@ -304,11 +247,14 @@ const Game: React.FC = () => {
     capturedByRed, capturedByBlack,
     elapsed, paused, resetGame, disconnect,
     tickTimer, togglePause, error, huffOffer,
-    pendingChainChoice,
     timeLeftRed, timeLeftBlack, timeLimit,
+    isPrivate, undoMove,
   } = useGameStore();
   const [copied, setCopied] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+
+  // Sound effects
+  useSoundManager();
 
   // Timer tick
   useEffect(() => {
@@ -343,6 +289,14 @@ const Game: React.FC = () => {
             <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>
           </svg>
         </button>
+        {isPrivate && (
+          <button className="sidebar-btn" onClick={undoMove} title="Undo Move" disabled={!!winner}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 7v6h6" />
+              <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
+            </svg>
+          </button>
+        )}
         {/* Settings button */}
         <button className="sidebar-btn" onClick={() => setShowSettings(true)} title="Settings">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
@@ -407,11 +361,6 @@ const Game: React.FC = () => {
 
       {/* ── Board ── */}
       <Board />
-
-      {/* ── Chain choice modal ── */}
-      <AnimatePresence>
-        {pendingChainChoice && <ChainChoiceModal key="chain" />}
-      </AnimatePresence>
 
       {/* ── Huff notification ── */}
       <AnimatePresence>

@@ -110,12 +110,32 @@ async def broadcast_state(room_id: str) -> None:
             logger.error(f"Failed to send to {color} in room {room_id}: {e}")
 
 
+def get_room_snapshot(room: dict) -> dict:
+    engine = room["engine"]
+    return {
+        "engine_state": {
+            "board": [row[:] for row in engine.board],
+            "turn": engine.turn,
+            "winner": engine.winner,
+            "active_jumper": engine.active_jumper,
+        },
+        "time_red": room.get("time_red", 300.0),
+        "time_black": room.get("time_black", 300.0),
+        "huff_pending": {
+            "pos": list(room["huff_pending"]["pos"]),
+            "for": room["huff_pending"]["for"]
+        } if room.get("huff_pending") else None
+    }
+
+
 async def process_move(room_id: str, player_color: str, from_pos: List[int], to_pos: List[int]) -> bool:
     room = rooms.get(room_id)
     if not room:
         return False
     engine = room["engine"]
     opp_color = "B" if player_color == "R" else "R"
+
+    snapshot = get_room_snapshot(room)
 
     # ── Snapshot for huff detection ─────────────────────────
     # Only relevant when NOT mid-chain (active_jumper already
@@ -142,6 +162,13 @@ async def process_move(room_id: str, player_color: str, from_pos: List[int], to_
     success = engine.make_move(from_pos[0], from_pos[1], to_pos[0], to_pos[1])
 
     if success:
+        # Save snapshot to history
+        if "history" not in room:
+            room["history"] = []
+        room["history"].append(snapshot)
+        if len(room["history"]) > 100:
+            room["history"].pop(0)
+
         room["huff_pending"] = None   # clear any stale pending huff
 
         # ── Huff offer on skipped capture ────────────────────
@@ -397,9 +424,15 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_color: s
                 engine = room["engine"]
                 pending = room.get("huff_pending")
                 if pending and pending["for"] == player_color:
+                    snapshot = get_room_snapshot(room)
                     pos = pending["pos"]
                     ok = engine.huff_piece(pos[0], pos[1])
                     if ok:
+                        if "history" not in room:
+                            room["history"] = []
+                        room["history"].append(snapshot)
+                        if len(room["history"]) > 100:
+                            room["history"].pop(0)
                         room["huff_pending"] = None
                         await broadcast_state(room_id)
                         if room["is_ai"] and engine.turn == room["ai_color"] and not engine.winner:
@@ -426,6 +459,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_color: s
             elif msg_type == "reset":
                 room["engine"].reset()
                 room["huff_pending"] = None
+                room["history"] = []
                 # Reset timers
                 limit = room.get("time_limit")
                 room["time_red"] = float(limit) if limit is not None else 300.0
@@ -433,6 +467,38 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_color: s
                 await broadcast_state(room_id)
                 if room["is_ai"] and room["engine"].turn == room["ai_color"]:
                     schedule_ai_turn(room_id)
+
+            # ── Undo ──────────────────────────────────────────────────────
+            elif msg_type == "undo":
+                if room.get("history"):
+                    last_state = room["history"].pop()
+                    
+                    # Restore engine state
+                    engine = room["engine"]
+                    engine_state = last_state["engine_state"]
+                    engine.board = [row[:] for row in engine_state["board"]]
+                    engine.turn = engine_state["turn"]
+                    engine.winner = engine_state["winner"]
+                    engine.active_jumper = engine_state["active_jumper"]
+                    
+                    # Restore room state
+                    room["time_red"] = last_state["time_red"]
+                    room["time_black"] = last_state["time_black"]
+                    room["huff_pending"] = last_state["huff_pending"]
+                    
+                    # Cancel any active AI task if the turn went back to human
+                    if room["is_ai"] and engine.turn != room["ai_color"]:
+                        existing = room.get("ai_task")
+                        if existing and not existing.done():
+                            existing.cancel()
+                            
+                    await broadcast_state(room_id)
+                    
+                    # If it went back to AI's turn, trigger the AI move
+                    if room["is_ai"] and engine.turn == room["ai_color"] and not engine.winner:
+                        schedule_ai_turn(room_id)
+                else:
+                    await websocket.send_json({"type": "error", "message": "No moves to undo."})
 
             # ── Settings ──────────────────────────────────────────────────
             elif msg_type == "settings":
@@ -452,8 +518,14 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_color: s
                 if engine.turn != player_color:
                     await websocket.send_json({"type": "error", "message": "Not your turn."})
                     continue
+                snapshot = get_room_snapshot(room)
                 ok = engine.stop_chain()
                 if ok:
+                    if "history" not in room:
+                        room["history"] = []
+                    room["history"].append(snapshot)
+                    if len(room["history"]) > 100:
+                        room["history"].pop(0)
                     await broadcast_state(room_id)
                     if room["is_ai"] and engine.turn == room["ai_color"] and not engine.winner:
                         schedule_ai_turn(room_id)

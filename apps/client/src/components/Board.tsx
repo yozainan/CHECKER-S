@@ -1,12 +1,11 @@
 import React from 'react';
 import { useGameStore } from '../store/useGameStore';
-import { motion, AnimatePresence } from 'framer-motion';
 
 export const Board: React.FC = () => {
   const {
     board, turn, playerColor,
     selectedCell, validTargets, winner,
-    activeJumper, capturedCells, opponentCursor, huffOffer,
+    activeJumper, opponentCursor, huffOffer,
     selectCell, sendCursor,
   } = useGameStore();
 
@@ -18,10 +17,6 @@ export const Board: React.FC = () => {
 
   const isActiveJumper = (r: number, c: number) =>
     activeJumper !== null && activeJumper[0] === r && activeJumper[1] === c;
-
-  const isCaptured = (r: number, c: number) =>
-    capturedCells.some(([cr, cc]) => cr === r && cc === c);
-
   const isOpponentHover = (r: number, c: number) =>
     opponentCursor !== null && opponentCursor[0] === r && opponentCursor[1] === c;
 
@@ -45,16 +40,19 @@ export const Board: React.FC = () => {
     sendCursor(r, c);
   };
 
+  const rows = playerColor === 'B' ? [7, 6, 5, 4, 3, 2, 1, 0] : [0, 1, 2, 3, 4, 5, 6, 7];
+  const cols = playerColor === 'B' ? [7, 6, 5, 4, 3, 2, 1, 0] : [0, 1, 2, 3, 4, 5, 6, 7];
+
   return (
     <div className="board-frame">
       <div className="board-grid">
-        {board.map((row, r) =>
-          row.map((piece, c) => {
+        {rows.map(r =>
+          cols.map(c => {
+            const piece = board[r][c];
             const isDark      = (r + c) % 2 === 1;
             const selected    = isSelected(r, c);
             const validTarget = isValidTarget(r, c);
             const jumping     = isActiveJumper(r, c);
-            const captured    = isCaptured(r, c);
             const oppHover    = isOpponentHover(r, c);
             const huffTarget  = isHuffTarget(r, c);
             const isMyPiece   = piece !== '' &&
@@ -66,8 +64,6 @@ export const Board: React.FC = () => {
             else if (validTarget) cellClass += ' valid-move';
             else if (isDark && isMyPiece && turn === playerColor && !winner)
               cellClass += ' can-select';
-
-
 
             return (
               <div
@@ -86,29 +82,18 @@ export const Board: React.FC = () => {
                   <div className="huff-target-ring" />
                 )}
 
-                {/* ── Capture flash ── */}
-                {captured && (
-                  <div className="capture-flash" />
-                )}
-
                 {/* ── Active jumper pulse ── */}
                 {jumping && !selected && (
                   <div className="active-jumper-ring" />
                 )}
 
-                {/* ── Piece ── */}
-                <AnimatePresence>
-                  {piece && (
-                    <motion.div
-                      key={`${r}-${c}-${piece}`}
-                      className={`${getPieceClass(piece)}${selected || jumping ? ' active' : ''}`}
-                      initial={{ scale: 0.6, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      exit={{ scale: 0, opacity: 0 }}
-                      transition={{ type: 'spring', stiffness: 380, damping: 22 }}
-                    />
-                  )}
-                </AnimatePresence>
+                {/* ── Piece — static, no animation ── */}
+                {piece && (
+                  <div
+                    key={`piece-${r}-${c}-${piece}`}
+                    className={`${getPieceClass(piece)}${selected || jumping ? ' active' : ''}`}
+                  />
+                )}
 
                 {/* ── Valid-move dot (on empty dark cells) ── */}
                 {validTarget && !piece && (

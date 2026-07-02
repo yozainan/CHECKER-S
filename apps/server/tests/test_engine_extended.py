@@ -206,16 +206,8 @@ class TestKingPromotion(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(self.e.board[7][4], "BK")
 
-    def test_promotion_stops_multi_jump(self):
-        """Reaching the back row mid-chain promotes and ends the turn."""
-        self.e.board[1][2] = "R"
-        self.e.board[0][3] = "B"   # would be second victim if multi-jump continued
-        # Actually this test checks: if Red captures to row 0, it promotes and turn ends
-        self.e.board[2][1] = "B"   # first victim
-        self.e.turn = "R"
-        # R@(3,0) would need to jump (2,1)→(1,2) but there's already R there;
-        # simpler: R@(1,4) captures (0,3) to reach row 0 – not meaningful.
-        # Use cleaner setup: R at (2,1), jumps B at (1,2) to land at (0,3).
+    def test_promotion_ends_turn_when_no_further_jumps(self):
+        """Promoting mid-chain ends the turn only when no further captures are possible."""
         self.e.board = [['' for _ in range(8)] for _ in range(8)]
         self.e.board[2][1] = "R"
         self.e.board[1][2] = "B"
@@ -224,8 +216,25 @@ class TestKingPromotion(unittest.TestCase):
         ok = self.e.make_move(2, 1, 0, 3)
         self.assertTrue(ok)
         self.assertEqual(self.e.board[0][3], "RK")  # promoted
-        self.assertEqual(self.e.turn, "B")           # turn ended
+        self.assertEqual(self.e.turn, "B")           # turn ended (no more jumps)
         self.assertIsNone(self.e.active_jumper)
+
+    def test_promotion_continues_chain_when_jump_available(self):
+        """A newly promoted queen continues capturing if jump targets exist."""
+        # Setup: R at (2,1), jumps B at (1,2) → promotes at (0,3)
+        # Then as a flying king can jump B at (1,4) → land at (2,5)
+        self.e.board = [['' for _ in range(8)] for _ in range(8)]
+        self.e.board[2][1] = "R"
+        self.e.board[1][2] = "B"   # first victim
+        self.e.board[1][4] = "B"   # second victim (reachable diagonally from (0,3))
+        self.e.board[0][3] = ""
+        self.e.board[2][5] = ""
+        self.e.turn = "R"
+        ok = self.e.make_move(2, 1, 0, 3)
+        self.assertTrue(ok)
+        self.assertEqual(self.e.board[0][3], "RK")  # promoted
+        self.assertEqual(self.e.turn, "R")           # turn NOT switched (chain continues)
+        self.assertIsNotNone(self.e.active_jumper)   # still active jumper
 
 
 class TestKingMovement(unittest.TestCase):

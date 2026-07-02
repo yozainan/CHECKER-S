@@ -15,12 +15,6 @@ export interface HuffOffer {
   expiresAt: number;  // Date.now() + ms
 }
 
-export interface ChainChoice {
-  /** The active jumper position (piece that just captured). */
-  jumperPos: Pos;
-  /** All reachable landing squares from the active jumper. */
-  targets: Pos[];
-}
 
 export interface ActivePiece {
   id: string;
@@ -71,18 +65,18 @@ export interface GameState {
   huffOffer: HuffOffer | null;  // Pending huff offer from server
   huffEnabled: boolean;         // Whether the huff rule is active (settings toggle)
 
-  // Multi-jump chain choice (populated when activeJumper has further jumps)
-  pendingChainChoice: ChainChoice | null;
 
+  isPrivate: boolean;
   elapsed: number;
   paused: boolean;
 
   // Actions
   findMatch: () => void;
   cancelMatchmaking: () => void;
-  joinRoom: (room: string, color: Color) => void;
+  joinRoom: (room: string, color: Color, isPrivate?: boolean) => void;
   selectCell: (r: number, c: number) => void;
   makeMove: (fromPos: Pos, toPos: Pos) => void;
+  undoMove: () => void;
   resetGame: () => void;
   disconnect: () => void;
   setError: (msg: string | null) => void;
@@ -90,8 +84,6 @@ export interface GameState {
   acceptHuff: () => void;
   dismissHuff: () => void;
   setHuffEnabled: (v: boolean) => void;
-  stopChain: () => void;
-  continueChain: (toPos: Pos) => void;
   tickTimer: () => void;
   togglePause: () => void;
   changeTimeLimit: (limit: number | null) => void;
@@ -265,6 +257,17 @@ export function updateActivePieces(oldPieces: ActivePiece[], newBoard: Board): A
   }
   return result;
 }
+/* ── Helper to resolve WebSocket URL ── */
+function getWebSocketUrl(path: string): string {
+  const backendUrl = import.meta.env.VITE_BACKEND_URL;
+  if (backendUrl) {
+    const cleanUrl = backendUrl.replace(/^(https?:\/\/|wss?:\/\/)/, '');
+    const protocol = backendUrl.startsWith('https://') || backendUrl.startsWith('wss://') ? 'wss:' : 'ws:';
+    return `${protocol}//${cleanUrl}${path}`;
+  }
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}${path}`;
+}
 
 /* ── Store ── */
 export const useGameStore = create<GameState>((set, get) => ({
@@ -294,7 +297,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   opponentCursor: null,
   huffOffer: null,
   huffEnabled: true,
-  pendingChainChoice: null,
+  isPrivate: true,
   elapsed: 0,
   paused: false,
 
@@ -306,8 +309,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     set({ isMatchmaking: true, error: null });
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/matchmake`;
+    const wsUrl = getWebSocketUrl('/ws/matchmake');
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => set({ matchmakeSocket: ws });
@@ -318,7 +320,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         if (data.type === 'match_found') {
           set({ isMatchmaking: false, matchmakeSocket: null });
           ws.close();
-          get().joinRoom(data.room_id, data.color as Color);
+          get().joinRoom(data.room_id, data.color as Color, false);
         }
       } catch { /* ignore */ }
     };
@@ -337,7 +339,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
 
   /* ── Join room ── */
-  joinRoom: (room, color) => {
+  joinRoom: (room, color, isPrivate = true) => {
     const { socket } = get();
     if (socket) socket.close();
 
@@ -353,11 +355,10 @@ export const useGameStore = create<GameState>((set, get) => ({
       timeLimit: 300,
       moveHistory: [], elapsed: 0, isMatchmaking: false,
       opponentCursor: null, huffOffer: null,
-      pendingChainChoice: null,
+      isPrivate,
     });
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/${room}/${color}`;
+    const wsUrl = getWebSocketUrl(`/ws/${room}/${color}`);
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => set({ connected: true, socket: ws });
@@ -389,15 +390,6 @@ export const useGameStore = create<GameState>((set, get) => ({
 
           const newActiveJumper: Pos | null = payload.state.active_jumper;
 
-          // Check if the active jumper has further chain-jump options (for modal)
-          let pendingChainChoice: ChainChoice | null = null;
-          if (newActiveJumper && payload.state.turn === prev.playerColor) {
-            const [jr, jc] = newActiveJumper;
-            const chainTargets = getJumps(newBoard, jr, jc);
-            if (chainTargets.length > 0) {
-              pendingChainChoice = { jumperPos: newActiveJumper, targets: chainTargets };
-            }
-          }
 
           const timeLimit = payload.state.time_limit !== undefined ? payload.state.time_limit : prev.timeLimit;
           const timeLeftRed = payload.state.time_red !== undefined ? payload.state.time_red : prev.timeLeftRed;
@@ -421,9 +413,27 @@ export const useGameStore = create<GameState>((set, get) => ({
             capturedCells: newlyCaptured,
             selectedCell: null,
             validTargets: [],
-            pendingChainChoice,
             error: null,
           });
+
+          // ── Auto-continue chain captures ──
+          // If active jumper is set and it's our turn, auto-send the next jump
+          if (newActiveJumper && payload.state.turn === prev.playerColor) {
+            const [jr, jc] = newActiveJumper;
+            const chainTargets = getJumps(newBoard, jr, jc);
+            if (chainTargets.length > 0) {
+              const nextTarget = chainTargets[0];
+              setTimeout(() => {
+                const current = get();
+                if (current.activeJumper && 
+                    current.activeJumper[0] === jr && 
+                    current.activeJumper[1] === jc &&
+                    !current.winner) {
+                  current.makeMove([jr, jc], nextTarget);
+                }
+              }, 350);
+            }
+          }
 
           // Clear capture-flash cells after animation
           if (newlyCaptured.length > 0) {
@@ -473,10 +483,10 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   /* ── Select cell / compute valid targets ── */
   selectCell: (r, c) => {
-    const { board, turn, playerColor, activeJumper, selectedCell, validTargets, makeMove, pendingChainChoice } = get();
+    const { board, turn, playerColor, activeJumper, selectedCell, validTargets, makeMove } = get();
 
     // If chain choice modal is showing, ignore board clicks
-    if (pendingChainChoice) return;
+    // (no longer applicable — chain is auto-continued)
 
     if (selectedCell) {
       const isTarget = validTargets.some(([tr, tc]) => tr === r && tc === c);
@@ -507,28 +517,11 @@ export const useGameStore = create<GameState>((set, get) => ({
     const notation = toNotation(fromPos[0], fromPos[1], toPos[0], toPos[1]);
     set({
       selectedCell: null, validTargets: [],
-      pendingChainChoice: null,
       moveHistory: [...moveHistory, { player: playerColor!, notation }]
     });
     socket.send(JSON.stringify({ type: 'move', from_pos: fromPos, to_pos: toPos }));
   },
 
-  /* ── Stop chain (eat 1, end turn) ── */
-  stopChain: () => {
-    const { socket, playerColor, turn } = get();
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
-    if (turn !== playerColor) return;
-    set({ pendingChainChoice: null, selectedCell: null, validTargets: [] });
-    socket.send(JSON.stringify({ type: 'stop_chain' }));
-  },
-
-  /* ── Continue chain (eat 2, make next jump) ── */
-  continueChain: (toPos: Pos) => {
-    const { activeJumper, makeMove, pendingChainChoice } = get();
-    if (!activeJumper || !pendingChainChoice) return;
-    // makeMove will clear pendingChainChoice and send the move
-    makeMove(activeJumper, toPos);
-  },
 
   /* ── Reset ── */
   resetGame: () => {
@@ -545,7 +538,6 @@ export const useGameStore = create<GameState>((set, get) => ({
       timeLeftRed: timeLimit ?? 300,
       timeLeftBlack: timeLimit ?? 300,
       moveHistory: [], elapsed: 0, huffOffer: null,
-      pendingChainChoice: null,
     });
   },
 
@@ -567,7 +559,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       capturedCells: [],
       moveHistory: [], roomId: '', playerColor: null,
       error: null, elapsed: 0, opponentCursor: null, huffOffer: null,
-      pendingChainChoice: null,
+      isPrivate: true,
     });
   },
 
@@ -636,6 +628,13 @@ export const useGameStore = create<GameState>((set, get) => ({
     set({ timeLimit: limit, timeLeftRed: limit ?? 300, timeLeftBlack: limit ?? 300 });
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: 'settings', time_limit: limit }));
+    }
+  },
+
+  undoMove: () => {
+    const { socket, connected, winner } = get();
+    if (connected && socket && socket.readyState === WebSocket.OPEN && !winner) {
+      socket.send(JSON.stringify({ type: 'undo' }));
     }
   },
 }));
