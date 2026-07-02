@@ -161,6 +161,45 @@ const HuffNotification: React.FC = () => {
   );
 };
 
+/* ──────────── HUFF WARNING NOTIFICATION ──────────── */
+const HuffWarningNotification: React.FC = () => {
+  const { huffWarning } = useGameStore();
+  const [secsLeft, setSecsLeft] = useState(0);
+
+  useEffect(() => {
+    if (!huffWarning) { setSecsLeft(0); return; }
+    const update = () => {
+      const left = Math.max(0, Math.ceil((huffWarning.expiresAt - Date.now()) / 1000));
+      setSecsLeft(left);
+    };
+    update();
+    const id = setInterval(update, 500);
+    return () => clearInterval(id);
+  }, [huffWarning]);
+
+  if (!huffWarning) return null;
+
+  return (
+    <motion.div
+      className="huff-notification"
+      style={{ border: '1px solid #ff4444' }}
+      initial={{ opacity: 0, y: -20, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -20, scale: 0.95 }}
+      transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+    >
+      <div className="huff-header" style={{ color: '#ff4444' }}>
+        <span className="huff-icon">⚠</span>
+        <span className="huff-title">Your piece is in danger!</span>
+        <span className="huff-timer">{secsLeft}s</span>
+      </div>
+      <div className="huff-desc">
+        You missed a mandatory capture! Your opponent has the right to <strong>huff</strong> (remove) your piece.
+      </div>
+    </motion.div>
+  );
+};
+
 /* ──────────── SETTINGS PANEL ──────────── */
 interface SettingsPanelProps {
   onClose: () => void;
@@ -246,7 +285,7 @@ const Game: React.FC = () => {
     redPieces, blkPieces,
     capturedByRed, capturedByBlack,
     elapsed, paused, resetGame, disconnect,
-    tickTimer, togglePause, error, huffOffer,
+    tickTimer, togglePause, error, huffOffer, huffWarning,
     timeLeftRed, timeLeftBlack, timeLimit,
     isPrivate, undoMove,
   } = useGameStore();
@@ -365,6 +404,7 @@ const Game: React.FC = () => {
       {/* ── Huff notification ── */}
       <AnimatePresence>
         {huffOffer && <HuffNotification key="huff" />}
+        {huffWarning && <HuffWarningNotification key="huff-warn" />}
       </AnimatePresence>
 
       {/* ── Settings panel ── */}

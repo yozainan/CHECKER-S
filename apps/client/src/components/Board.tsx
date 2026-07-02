@@ -3,9 +3,9 @@ import { useGameStore } from '../store/useGameStore';
 
 export const Board: React.FC = () => {
   const {
-    board, turn, playerColor,
+    board, turn, playerColor, pieces,
     selectedCell, validTargets, winner,
-    activeJumper, opponentCursor, huffOffer,
+    activeJumper, opponentCursor, huffOffer, huffWarning,
     selectCell, sendCursor,
   } = useGameStore();
 
@@ -20,8 +20,10 @@ export const Board: React.FC = () => {
   const isOpponentHover = (r: number, c: number) =>
     opponentCursor !== null && opponentCursor[0] === r && opponentCursor[1] === c;
 
-  const isHuffTarget = (r: number, c: number) =>
+  const isHuffOffer = (r: number, c: number) =>
     huffOffer !== null && huffOffer.pos[0] === r && huffOffer.pos[1] === c;
+  const isHuffWarning = (r: number, c: number) =>
+    huffWarning !== null && huffWarning.pos[0] === r && huffWarning.pos[1] === c;
 
   const getPieceClass = (piece: string) => {
     let cls = 'piece';
@@ -43,6 +45,9 @@ export const Board: React.FC = () => {
   const rows = playerColor === 'B' ? [7, 6, 5, 4, 3, 2, 1, 0] : [0, 1, 2, 3, 4, 5, 6, 7];
   const cols = playerColor === 'B' ? [7, 6, 5, 4, 3, 2, 1, 0] : [0, 1, 2, 3, 4, 5, 6, 7];
 
+  const getTop = (r: number) => playerColor === 'B' ? (7 - r) * 12.5 : r * 12.5;
+  const getLeft = (c: number) => playerColor === 'B' ? (7 - c) * 12.5 : c * 12.5;
+
   return (
     <div className="board-frame">
       <div className="board-grid">
@@ -54,7 +59,7 @@ export const Board: React.FC = () => {
             const validTarget = isValidTarget(r, c);
             const jumping     = isActiveJumper(r, c);
             const oppHover    = isOpponentHover(r, c);
-            const huffTarget  = isHuffTarget(r, c);
+            const huffTarget  = isHuffOffer(r, c) || isHuffWarning(r, c);
             const isMyPiece   = piece !== '' &&
               ((playerColor === 'R' && (piece === 'R' || piece === 'RK')) ||
                (playerColor === 'B' && (piece === 'B' || piece === 'BK')));
@@ -72,27 +77,14 @@ export const Board: React.FC = () => {
                 onClick={() => handleCellClick(r, c)}
                 onMouseEnter={() => handleCellEnter(r, c)}
               >
-                {/* ── Opponent cursor ring (only on opponent's OWN pieces) ── */}
-                {oppHover && piece !== '' && !isMyPiece && (
-                  <div className="opponent-cursor-piece-ring" />
+                {/* ── Opponent cursor ── */}
+                {oppHover && (
+                  <div className={piece !== '' ? "opponent-cursor-piece-ring" : "opponent-cursor-ring"} />
                 )}
 
                 {/* ── Huff target warning ── */}
                 {huffTarget && (
                   <div className="huff-target-ring" />
-                )}
-
-                {/* ── Active jumper pulse ── */}
-                {jumping && !selected && (
-                  <div className="active-jumper-ring" />
-                )}
-
-                {/* ── Piece — static, no animation ── */}
-                {piece && (
-                  <div
-                    key={`piece-${r}-${c}-${piece}`}
-                    className={`${getPieceClass(piece)}${selected || jumping ? ' active' : ''}`}
-                  />
                 )}
 
                 {/* ── Valid-move dot (on empty dark cells) ── */}
@@ -103,6 +95,28 @@ export const Board: React.FC = () => {
             );
           })
         )}
+
+        {/* ── Dynamic Pieces Layer for Smooth Animations ── */}
+        <div className="pieces-layer">
+          {pieces.map(p => {
+            const selected = isSelected(p.r, p.c);
+            const jumping = isActiveJumper(p.r, p.c);
+            const shaking = isHuffWarning(p.r, p.c) || isHuffOffer(p.r, p.c);
+            return (
+              <div
+                key={p.id}
+                className="piece-container"
+                style={{ top: `${getTop(p.r)}%`, left: `${getLeft(p.c)}%` }}
+              >
+                {/* ── Active jumper pulse travels with piece ── */}
+                {jumping && !selected && (
+                  <div className="active-jumper-ring" />
+                )}
+                <div className={`${getPieceClass(p.type)}${selected || jumping ? ' active' : ''}${shaking ? ' huff-danger-shake' : ''}`} />
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
