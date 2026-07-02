@@ -73,6 +73,12 @@ body {
   border-color: rgba(255,255,255,0.25);
 }
 .sidebar-btn:active { transform: scale(0.93); }
+.sidebar-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none !important;
+  pointer-events: none;
+}
 
 /* ── Right Score Panel ── */
 .score-panel {
@@ -300,7 +306,7 @@ body {
   cursor: pointer;
   will-change: transform;
   transform: translate3d(0,0,0);
-  transition: transform 0.12s ease, filter 0.12s ease;
+  transition: transform 0.1s ease, filter 0.1s ease;
 }
 
 .piece:hover {

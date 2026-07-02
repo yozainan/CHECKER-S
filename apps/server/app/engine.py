@@ -246,8 +246,9 @@ class CheckersEngine:
             self.board[to_r][to_c] = 'BK'
             promoted = True
 
-        # Multi-jump continuation (only if captured and not just promoted)
-        if is_jump and not promoted:
+        # Multi-jump continuation — continues even after promotion
+        # (newly crowned queen can keep capturing with flying-king movement)
+        if is_jump:
             further = self._get_jumps(self.board, to_r, to_c)
             if further:
                 self.active_jumper = (to_r, to_c)
@@ -299,7 +300,12 @@ class CheckersEngine:
 
     def _check_winner(self) -> None:
         """The player who cannot move (or has no pieces) loses."""
-        if not self.get_all_valid_moves(self.turn):
+        # Quick check: does the current player have ANY pieces at all?
+        has_pieces = any(
+            self.get_piece_owner(self.board[r][c]) == self.turn
+            for r in range(8) for c in range(8)
+        )
+        if not has_pieces or not self.get_all_valid_moves(self.turn):
             self.winner = 'B' if self.turn == 'R' else 'R'
 
     # ------------------------------------------------------------------ #
