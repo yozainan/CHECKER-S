@@ -246,9 +246,9 @@ class CheckersEngine:
             self.board[to_r][to_c] = 'BK'
             promoted = True
 
-        # Multi-jump continuation — continues even after promotion
-        # (newly crowned queen can keep capturing with flying-king movement)
-        if is_jump:
+        # Multi-jump continuation
+        # newly crowned pieces immediately end their turn
+        if is_jump and not promoted:
             further = self._get_jumps(self.board, to_r, to_c)
             if further:
                 self.active_jumper = (to_r, to_c)

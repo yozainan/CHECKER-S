@@ -63,6 +63,7 @@ export interface GameState {
 
   opponentCursor: Pos | null;   // Cell the opponent is hovering over
   huffOffer: HuffOffer | null;  // Pending huff offer from server
+  huffWarning: HuffOffer | null; // Warning that my piece might get huffed
   huffEnabled: boolean;         // Whether the huff rule is active (settings toggle)
 
 
@@ -215,46 +216,54 @@ export function updateActivePieces(oldPieces: ActivePiece[], newBoard: Board): A
   const result: ActivePiece[] = [];
   const unmatched = [...oldPieces];
 
+  const newPieces: { r: number; c: number; type: Piece }[] = [];
   for (let r = 0; r < 8; r++) {
     for (let c = 0; c < 8; c++) {
-      const type = newBoard[r][c];
-      if (type !== '') {
-        const owner = getOwner(type);
-        // Find the closest unmatched piece of the same color
-        let bestIdx = -1;
-        let minDist = Infinity;
-        for (let i = 0; i < unmatched.length; i++) {
-          const p = unmatched[i];
-          if (getOwner(p.type) === owner) {
-            const dist = Math.abs(p.r - r) + Math.abs(p.c - c);
-            if (dist < minDist) {
-              minDist = dist;
-              bestIdx = i;
-            }
-          }
-        }
-
-        if (bestIdx !== -1) {
-          const matched = unmatched.splice(bestIdx, 1)[0];
-          result.push({
-            id: matched.id,
-            r,
-            c,
-            type,
-          });
-        } else {
-          // If no match found (initial load / sync issues), create a new one
-          const newId = `${owner}-${Math.random().toString(36).substr(2, 9)}`;
-          result.push({
-            id: newId,
-            r,
-            c,
-            type,
-          });
-        }
+      if (newBoard[r][c] !== '') {
+        newPieces.push({ r, c, type: newBoard[r][c] });
       }
     }
   }
+
+  // Pass 1: Exact location matches (dist === 0)
+  for (let i = newPieces.length - 1; i >= 0; i--) {
+    const np = newPieces[i];
+    const owner = getOwner(np.type);
+    const exactIdx = unmatched.findIndex(p => p.r === np.r && p.c === np.c && getOwner(p.type) === owner);
+    
+    if (exactIdx !== -1) {
+      const matched = unmatched.splice(exactIdx, 1)[0];
+      result.push({ id: matched.id, r: np.r, c: np.c, type: np.type });
+      newPieces.splice(i, 1);
+    }
+  }
+
+  // Pass 2: Closest remaining pieces
+  for (const np of newPieces) {
+    const owner = getOwner(np.type);
+    let bestIdx = -1;
+    let minDist = Infinity;
+    
+    for (let i = 0; i < unmatched.length; i++) {
+      const p = unmatched[i];
+      if (getOwner(p.type) === owner) {
+        const dist = Math.abs(p.r - np.r) + Math.abs(p.c - np.c);
+        if (dist < minDist) {
+          minDist = dist;
+          bestIdx = i;
+        }
+      }
+    }
+
+    if (bestIdx !== -1) {
+      const matched = unmatched.splice(bestIdx, 1)[0];
+      result.push({ id: matched.id, r: np.r, c: np.c, type: np.type });
+    } else {
+      const newId = `${owner}-${Math.random().toString(36).substr(2, 9)}`;
+      result.push({ id: newId, r: np.r, c: np.c, type: np.type });
+    }
+  }
+
   return result;
 }
 /* ── Helper to resolve WebSocket URL ── */
@@ -296,6 +305,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   validTargets: [],
   opponentCursor: null,
   huffOffer: null,
+  huffWarning: null,
   huffEnabled: true,
   isPrivate: true,
   elapsed: 0,
@@ -354,7 +364,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       timeLeftBlack: 300,
       timeLimit: 300,
       moveHistory: [], elapsed: 0, isMatchmaking: false,
-      opponentCursor: null, huffOffer: null,
+      opponentCursor: null, huffOffer: null, huffWarning: null,
       isPrivate,
     });
 
@@ -431,7 +441,7 @@ export const useGameStore = create<GameState>((set, get) => ({
                     !current.winner) {
                   current.makeMove([jr, jc], nextTarget);
                 }
-              }, 350);
+              }, 1000);
             }
           }
 
@@ -440,7 +450,7 @@ export const useGameStore = create<GameState>((set, get) => ({
             setTimeout(() => {
               if (get().capturedCells === newlyCaptured)
                 set({ capturedCells: [] });
-            }, 700);
+            }, 1000);
           }
 
         /* ── Error from server ── */
@@ -460,17 +470,24 @@ export const useGameStore = create<GameState>((set, get) => ({
           }
 
         /* ── Huff offer ── */
-        } else if (payload.type === 'huff_offer') {
+        } else if (payload.type === 'huff_offer' || payload.type === 'huff_warning') {
           // If huff rule is disabled in settings, silently ignore
           if (!get().huffEnabled) return;
 
           const expiresAt = Date.now() + payload.expires_in * 1000;
-          set({ huffOffer: { pos: payload.pos as Pos, expiresAt } });
+          if (payload.type === 'huff_offer') {
+            set({ huffOffer: { pos: payload.pos as Pos, expiresAt } });
+          } else {
+            set({ huffWarning: { pos: payload.pos as Pos, expiresAt } });
+          }
+          
           // Auto-dismiss when expired
           setTimeout(() => {
-            const { huffOffer } = get();
+            const { huffOffer, huffWarning } = get();
             if (huffOffer && Date.now() >= huffOffer.expiresAt)
               set({ huffOffer: null });
+            if (huffWarning && Date.now() >= huffWarning.expiresAt)
+              set({ huffWarning: null });
           }, (payload.expires_in + 0.5) * 1000);
         }
 
@@ -537,7 +554,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       pieces: [],
       timeLeftRed: timeLimit ?? 300,
       timeLeftBlack: timeLimit ?? 300,
-      moveHistory: [], elapsed: 0, huffOffer: null,
+      moveHistory: [], elapsed: 0, huffOffer: null, huffWarning: null,
     });
   },
 
@@ -558,7 +575,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       capturedByRed: 0, capturedByBlack: 0,
       capturedCells: [],
       moveHistory: [], roomId: '', playerColor: null,
-      error: null, elapsed: 0, opponentCursor: null, huffOffer: null,
+      error: null, elapsed: 0, opponentCursor: null, huffOffer: null, huffWarning: null,
       isPrivate: true,
     });
   },
@@ -587,7 +604,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   setHuffEnabled: (v: boolean) => {
     set({ huffEnabled: v });
     // If disabling, clear any pending offer locally
-    if (!v) set({ huffOffer: null });
+    if (!v) set({ huffOffer: null, huffWarning: null });
     // Sync with server so AI respects the setting too
     const { socket, timeLimit } = get();
     if (socket && socket.readyState === WebSocket.OPEN) {

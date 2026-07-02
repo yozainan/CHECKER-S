@@ -196,13 +196,27 @@ async def process_move(room_id: str, player_color: str, from_pos: List[int], to_
 
                 if room.get("huff_enabled", True):
                     room["huff_pending"] = {"pos": huff_pos, "for": opp_color}
+                    
+                    # Send huff offer to the player who can take the piece
                     opp_ws = room["connections"].get(opp_color)
                     if opp_ws:
                         try:
                             await opp_ws.send_json({
                                 "type": "huff_offer",
                                 "pos": huff_pos,
-                                "expires_in": 10,
+                                "expires_in": 2,
+                            })
+                        except Exception:
+                            pass
+                            
+                    # Send huff warning to the guilty player whose piece is about to be taken
+                    curr_ws = room["connections"].get(player_color)
+                    if curr_ws:
+                        try:
+                            await curr_ws.send_json({
+                                "type": "huff_warning",
+                                "pos": huff_pos,
+                                "expires_in": 1,
                             })
                         except Exception:
                             pass
@@ -234,18 +248,23 @@ async def handle_ai_turn(room_id: str) -> None:
     if engine.winner:
         return
 
-    # ── AI Huff Execution (runs BEFORE sleep so it's prompt) ──
+    # ── AI Huff Execution ──
     # If the human player slid instead of jumping, huff_pending is set for AI.
-    # The AI executes the huff immediately (within the huff-enabled check).
+    # The AI will wait 1 second (so the human sees the terror shake) then huff.
     pending = room.get("huff_pending")
     if pending and pending["for"] == room["ai_color"] and room.get("huff_enabled", True):
-        pos = pending["pos"]
-        logger.info(f"AI executes huff on player piece at {pos} in room {room_id}")
-        ok = engine.huff_piece(pos[0], pos[1])
-        if ok:
-            room["huff_pending"] = None
-            await broadcast_state(room_id)
-            await asyncio.sleep(0.6)  # brief visual pause after huffing
+        await asyncio.sleep(1.0)  # Wait for 1s to let the piece shake
+        
+        # Verify it's still pending
+        pending_now = room.get("huff_pending")
+        if pending_now and pending_now["for"] == room["ai_color"]:
+            pos = pending_now["pos"]
+            logger.info(f"AI executes huff on player piece at {pos} in room {room_id}")
+            ok = engine.huff_piece(pos[0], pos[1])
+            if ok:
+                room["huff_pending"] = None
+                await broadcast_state(room_id)
+                await asyncio.sleep(0.5)  # brief visual pause after huffing
 
     # Guard: only proceed if it is actually the AI's turn
     if engine.turn != room["ai_color"] or engine.winner:
@@ -261,7 +280,7 @@ async def handle_ai_turn(room_id: str) -> None:
             if not success:
                 break
             if engine.turn == room["ai_color"]:
-                await asyncio.sleep(0.6)
+                await asyncio.sleep(1.0)
         else:
             break
 

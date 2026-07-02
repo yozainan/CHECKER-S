@@ -238,6 +238,25 @@ body {
   position: relative;
 }
 
+/* ── Pieces Overlay Layer ── */
+.pieces-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none; /* Let clicks pass through to grid cells */
+  z-index: 5;
+}
+
+.piece-container {
+  position: absolute;
+  width: 12.5%;
+  height: 12.5%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: top 0.4s ease, left 0.4s ease;
+  will-change: top, left;
+}
+
 /* ── Cells ── */
 .cell {
   position: relative;
@@ -599,7 +618,7 @@ body {
   inset: 0;
   border-radius: 50%;
   background: radial-gradient(circle, rgba(255, 140, 0, 0.9) 0%, rgba(255, 50, 0, 0.4) 60%, transparent 100%);
-  animation: capture-burst 0.65s ease-out forwards;
+  animation: capture-burst 1.2s ease-out forwards;
   pointer-events: none;
   z-index: 10;
 }
@@ -1076,3 +1095,17 @@ body {
   color: #fff;
 }
 
+
+/* ── Huff Danger Shake Animation ── */
+.huff-danger-shake {
+  animation: huff-terror 0.4s ease-in-out infinite;
+  filter: drop-shadow(0 0 12px rgba(255, 50, 50, 0.9));
+}
+
+@keyframes huff-terror {
+  0% { transform: translate3d(2px, 1px, 0) rotate(1deg); }
+  25% { transform: translate3d(-3px, -2px, 0) rotate(-2deg); }
+  50% { transform: translate3d(1px, -1px, 0) rotate(1deg); }
+  75% { transform: translate3d(-1px, 2px, 0) rotate(-1deg); }
+  100% { transform: translate3d(2px, 1px, 0) rotate(1deg); }
+}

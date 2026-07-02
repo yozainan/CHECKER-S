@@ -219,8 +219,8 @@ class TestKingPromotion(unittest.TestCase):
         self.assertEqual(self.e.turn, "B")           # turn ended (no more jumps)
         self.assertIsNone(self.e.active_jumper)
 
-    def test_promotion_continues_chain_when_jump_available(self):
-        """A newly promoted queen continues capturing if jump targets exist."""
+    def test_promotion_ends_turn_even_if_jump_available(self):
+        """A newly promoted queen ends its turn even if jump targets exist."""
         # Setup: R at (2,1), jumps B at (1,2) → promotes at (0,3)
         # Then as a flying king can jump B at (1,4) → land at (2,5)
         self.e.board = [['' for _ in range(8)] for _ in range(8)]
@@ -230,11 +230,12 @@ class TestKingPromotion(unittest.TestCase):
         self.e.board[0][3] = ""
         self.e.board[2][5] = ""
         self.e.turn = "R"
+
         ok = self.e.make_move(2, 1, 0, 3)
         self.assertTrue(ok)
         self.assertEqual(self.e.board[0][3], "RK")  # promoted
-        self.assertEqual(self.e.turn, "R")           # turn NOT switched (chain continues)
-        self.assertIsNotNone(self.e.active_jumper)   # still active jumper
+        self.assertEqual(self.e.turn, "B")          # turn switched (chain ends)
+        self.assertIsNone(self.e.active_jumper)     # no active jumper
 
 
 class TestKingMovement(unittest.TestCase):
