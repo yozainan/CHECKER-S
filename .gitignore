@@ -19,8 +19,14 @@ dist/
 .cache/
 *.local
 
-# Vite build output
-apps/client/dist/
+# Vite and build output
+apps/web/dist/
+apps/api/dist/
+packages/*/dist/
+dist/
+
+# TypeScript build info cache
+*.tsbuildinfo
 
 # OS
 .DS_Store

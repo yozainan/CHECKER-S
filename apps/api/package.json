@@ -14,10 +14,10 @@
     "@fastify/cors": "^9.0.1",
     "zod": "^3.22.4",
     "uuid": "^9.0.1",
-    "@checkers/types": "*",
-    "@checkers/shared": "*",
-    "@checkers/engine": "*",
-    "@checkers/ai": "*"
+    "@checkers/types": "file:../../packages/types",
+    "@checkers/shared": "file:../../packages/shared",
+    "@checkers/engine": "file:../../packages/engine",
+    "@checkers/ai": "file:../../packages/ai"
   },
   "devDependencies": {
     "tsx": "^4.7.1",

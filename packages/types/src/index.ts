@@ -29,3 +29,5 @@ export interface EngineState {
   winner: Color | null;
   active_jumper: Pos | null;
 }
+
+export const TYPE_FLAG = true;

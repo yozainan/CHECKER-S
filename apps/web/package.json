@@ -15,8 +15,8 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "zustand": "^5.0.14",
-    "@checkers/types": "*",
-    "@checkers/shared": "*"
+    "@checkers/types": "file:../../packages/types",
+    "@checkers/shared": "file:../../packages/shared"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.2",

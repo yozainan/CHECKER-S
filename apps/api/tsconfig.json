@@ -2,7 +2,14 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src"
+    "rootDir": "./src",
+    "baseUrl": ".",
+    "paths": {
+      "@checkers/types": ["../../packages/types/dist/index.d.ts"],
+      "@checkers/shared": ["../../packages/shared/dist/index.d.ts"],
+      "@checkers/engine": ["../../packages/engine/dist/index.d.ts"],
+      "@checkers/ai": ["../../packages/ai/dist/index.d.ts"]
+    }
   },
   "include": ["src/**/*"]
 }
