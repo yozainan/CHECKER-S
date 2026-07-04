@@ -9,13 +9,6 @@
     "forceConsistentCasingInFileNames": true,
     "composite": true,
     "declaration": true,
-    "declarationMap": true,
-    "baseUrl": ".",
-    "paths": {
-      "@checkers/types": ["packages/types/dist/index.d.ts"],
-      "@checkers/shared": ["packages/shared/dist/index.d.ts"],
-      "@checkers/engine": ["packages/engine/dist/index.d.ts"],
-      "@checkers/ai": ["packages/ai/dist/index.d.ts"]
-    }
+    "declarationMap": true
   }
 }
