@@ -9,7 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@checkers/types": "*",
-    "@checkers/shared": "*"
+    "@checkers/types": "file:../types",
+    "@checkers/shared": "file:../shared"
   }
 }

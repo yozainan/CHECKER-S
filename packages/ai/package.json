@@ -9,7 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@checkers/types": "*",
-    "@checkers/engine": "*"
+    "@checkers/types": "file:../types",
+    "@checkers/engine": "file:../engine"
   }
 }
