@@ -342,14 +342,14 @@ app.register(async function (fastify) {
   // 1. Matchmaking
   fastify.get('/ws/matchmake', { websocket: true }, (connection, req) => {
     const player: MatchmakerPlayer = {
-      socket: connection.socket,
+      socket: connection,
       joinedAt: Date.now(),
     };
     matchmakingQueue.push(player);
     app.log.info(`Player joined matchmaking queue. Queue size: ${matchmakingQueue.length}`);
 
     const matchInterval = setInterval(() => {
-      if (connection.socket.readyState !== 1) {
+      if (connection.readyState !== 1) {
         clearInterval(matchInterval);
         return;
       }
@@ -394,15 +394,15 @@ app.register(async function (fastify) {
       }
     }, 1000);
 
-    connection.socket.on('message', (message: string) => {
+    connection.on('message', (message: string) => {
       if (message.toString() === 'cancel') {
         matchmakingQueue = matchmakingQueue.filter((p) => p !== player);
         clearInterval(matchInterval);
-        connection.socket.close();
+        connection.close();
       }
     });
 
-    connection.socket.on('close', () => {
+    connection.on('close', () => {
       matchmakingQueue = matchmakingQueue.filter((p) => p !== player);
       clearInterval(matchInterval);
     });
@@ -413,12 +413,12 @@ app.register(async function (fastify) {
     const { roomId, playerColor } = req.params as { roomId: string; playerColor: string };
 
     if (playerColor !== 'R' && playerColor !== 'B') {
-      connection.socket.close(4000, 'Invalid player color. Must be R or B.');
+      connection.close(4000, 'Invalid player color. Must be R or B.');
       return;
     }
 
     const room = getOrCreateRoom(roomId);
-    room.connections[playerColor] = connection.socket;
+    room.connections[playerColor] = connection;
 
     if (roomId.startsWith('ai-')) {
       room.is_ai = true;
@@ -439,7 +439,7 @@ app.register(async function (fastify) {
 
     // Sync state immediately
     try {
-      connection.socket.send(JSON.stringify({ type: 'sync', state: room.engine.getState() }));
+      connection.send(JSON.stringify({ type: 'sync', state: room.engine.getState() }));
       broadcastState(roomId);
       if (room.is_ai && room.engine.turn === room.ai_color) {
         scheduleAITurn(roomId);
@@ -450,12 +450,12 @@ app.register(async function (fastify) {
 
     const oppColor: Color = playerColor === 'R' ? 'B' : 'R';
 
-    connection.socket.on('message', async (data: string) => {
+    connection.on('message', async (data: string) => {
       try {
         const raw = JSON.parse(data);
         const parsed = GenericMessageSchema.safeParse(raw);
         if (!parsed.success) {
-          connection.socket.send(
+          connection.send(
             JSON.stringify({ type: 'error', message: 'Invalid payload schema.' })
           );
           return;
@@ -466,7 +466,7 @@ app.register(async function (fastify) {
         // Move
         if (message.type === 'move') {
           if (room.engine.turn !== playerColor) {
-            connection.socket.send(JSON.stringify({ type: 'error', message: 'It is not your turn.' }));
+            connection.send(JSON.stringify({ type: 'error', message: 'It is not your turn.' }));
             return;
           }
 
@@ -476,7 +476,7 @@ app.register(async function (fastify) {
               scheduleAITurn(roomId);
             }
           } else {
-            connection.socket.send(JSON.stringify({ type: 'error', message: 'Invalid move.' }));
+            connection.send(JSON.stringify({ type: 'error', message: 'Invalid move.' }));
           }
         }
 
@@ -498,10 +498,10 @@ app.register(async function (fastify) {
                 scheduleAITurn(roomId);
               }
             } else {
-              connection.socket.send(JSON.stringify({ type: 'error', message: 'Huff failed.' }));
+              connection.send(JSON.stringify({ type: 'error', message: 'Huff failed.' }));
             }
           } else {
-            connection.socket.send(JSON.stringify({ type: 'error', message: 'No active huff offer.' }));
+            connection.send(JSON.stringify({ type: 'error', message: 'No active huff offer.' }));
           }
         }
 
@@ -564,7 +564,7 @@ app.register(async function (fastify) {
               scheduleAITurn(roomId);
             }
           } else {
-            connection.socket.send(JSON.stringify({ type: 'error', message: 'No moves to undo.' }));
+            connection.send(JSON.stringify({ type: 'error', message: 'No moves to undo.' }));
           }
         }
 
@@ -585,7 +585,7 @@ app.register(async function (fastify) {
         // Stop chain
         else if (message.type === 'stop_chain') {
           if (room.engine.turn !== playerColor) {
-            connection.socket.send(JSON.stringify({ type: 'error', message: 'Not your turn.' }));
+            connection.send(JSON.stringify({ type: 'error', message: 'Not your turn.' }));
             return;
           }
           const snapshot = getRoomSnapshot(room);
@@ -600,20 +600,20 @@ app.register(async function (fastify) {
               scheduleAITurn(roomId);
             }
           } else {
-            connection.socket.send(JSON.stringify({ type: 'error', message: 'No active chain to stop.' }));
+            connection.send(JSON.stringify({ type: 'error', message: 'No active chain to stop.' }));
           }
         }
       } catch (err) {
-        connection.socket.send(
+        connection.send(
           JSON.stringify({ type: 'error', message: 'Error processing message.' })
         );
       }
     });
 
-    connection.socket.on('close', () => {
+    connection.on('close', () => {
       app.log.info(`Player ${playerColor} disconnected from room ${roomId}`);
       if (rooms[roomId]) {
-        if (rooms[roomId].connections[playerColor] === connection.socket) {
+        if (rooms[roomId].connections[playerColor] === connection) {
           delete rooms[roomId].connections[playerColor];
         }
 
