@@ -1109,3 +1109,85 @@ body {
   75% { transform: translate3d(-1px, 2px, 0) rotate(-1deg); }
   100% { transform: translate3d(2px, 1px, 0) rotate(1deg); }
 }
+
+/* =============================================================
+   MOBILE RESPONSIVENESS
+   ============================================================= */
+@media (max-width: 768px) {
+  .app {
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 12px;
+    gap: 8px;
+  }
+
+  .sidebar {
+    position: relative;
+    left: auto;
+    top: auto;
+    transform: none;
+    flex-direction: row;
+    justify-content: center;
+    width: 100%;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    gap: 10px;
+    order: 3;
+  }
+
+  .sidebar-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 6px;
+  }
+
+  .score-panel {
+    position: relative;
+    right: auto;
+    top: auto;
+    transform: none;
+    flex-direction: row;
+    justify-content: center;
+    width: 100%;
+    margin-bottom: 12px;
+    gap: 16px;
+    order: 1;
+  }
+
+  .score-card {
+    flex-direction: row;
+    width: auto;
+    padding: 6px 10px;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .score-cap-dots {
+    display: none;
+  }
+
+  .score-clock {
+    margin-top: 0;
+    padding: 3px 6px;
+    font-size: 0.75rem;
+  }
+
+  .board-frame {
+    padding: 10px;
+    order: 2;
+    box-shadow:
+      0 0 0 2px #5a3010,
+      0 12px 36px rgba(0,0,0,0.7);
+  }
+
+  .board-grid {
+    width: min(88vw, 88vh, 450px);
+    height: min(88vw, 88vh, 450px);
+  }
+
+  button[title="Quit"] {
+    display: none !important;
+  }
+}
+
