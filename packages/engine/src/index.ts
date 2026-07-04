@@ -322,7 +322,7 @@ export class CheckersEngine {
 
   public clone(): CheckersEngine {
     const next = new CheckersEngine();
-    next.board = this.board.map((row) => [...row]);
+    next.board = this.board.map((row: Piece[]) => [...row]);
     next.turn = this.turn;
     next.winner = this.winner;
     next.active_jumper = this.active_jumper ? [...this.active_jumper] : null;

@@ -2,7 +2,7 @@ import Fastify, { FastifyInstance } from 'fastify';
 import fastifyWebsocket from '@fastify/websocket';
 import fastifyCors from '@fastify/cors';
 import { v4 as uuidv4 } from 'uuid';
-import { Color, Pos, EngineState } from '@checkers/types';
+import { Color, Pos, EngineState, Piece } from '@checkers/types';
 import { CheckersEngine } from '@checkers/engine';
 import { getBestMove } from '@checkers/ai';
 import {
@@ -25,7 +25,7 @@ app.register(fastifyWebsocket);
 
 interface Room {
   engine: CheckersEngine;
-  connections: { R?: any; B?: any };
+  connections: Partial<Record<Color, any>>;
   is_ai: boolean;
   ai_color: Color | null;
   ai_difficulty: string;
@@ -132,7 +132,7 @@ function getRoomSnapshot(room: Room) {
   const engine = room.engine;
   return {
     engine_state: {
-      board: engine.board.map((row) => [...row]),
+      board: engine.board.map((row: Piece[]) => [...row]),
       turn: engine.turn,
       winner: engine.winner,
       active_jumper: engine.active_jumper ? [...engine.active_jumper] : null,
