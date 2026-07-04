@@ -1,27 +1,6 @@
 import { create } from 'zustand';
-
-export type Color  = 'R' | 'B';
-export type Piece  = 'R' | 'B' | 'RK' | 'BK' | '';
-export type Board  = Piece[][];
-export type Pos    = [number, number];
-
-export interface MoveRecord {
-  player: Color;
-  notation: string;
-}
-
-export interface HuffOffer {
-  pos: Pos;
-  expiresAt: number;  // Date.now() + ms
-}
-
-
-export interface ActivePiece {
-  id: string;
-  r: number;
-  c: number;
-  type: Piece;
-}
+import type { Color, Piece, Board, Pos, MoveRecord, HuffOffer, ActivePiece } from '@checkers/types';
+import { toNotation, countPieces } from '@checkers/shared';
 
 export interface GameState {
   board: Board;
@@ -193,23 +172,6 @@ function computeValidTargets(
   return [...jumps, ...slides];
 }
 
-/* ── Notation ── */
-function toNotation(fr: number, fc: number, tr: number, tc: number): string {
-  const cols = 'abcdefgh';
-  return `${cols[fc]}${8-fr}→${cols[tc]}${8-tr}`;
-}
-
-/* ── Count pieces directly from the board ── */
-function countPieces(board: Board): { red: number; blk: number } {
-  let red = 0, blk = 0;
-  for (let r = 0; r < 8; r++)
-    for (let c = 0; c < 8; c++) {
-      const p = board[r][c];
-      if (p === 'R' || p === 'RK') red++;
-      else if (p === 'B' || p === 'BK') blk++;
-    }
-  return { red, blk };
-}
 
 /* ── Active pieces matching for smooth transitions ── */
 export function updateActivePieces(oldPieces: ActivePiece[], newBoard: Board): ActivePiece[] {

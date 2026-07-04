@@ -57,7 +57,6 @@ export const Board: React.FC = () => {
             const isDark      = (r + c) % 2 === 1;
             const selected    = isSelected(r, c);
             const validTarget = isValidTarget(r, c);
-            const jumping     = isActiveJumper(r, c);
             const isMyPiece   = piece !== '' &&
               ((playerColor === 'R' && (piece === 'R' || piece === 'RK')) ||
                (playerColor === 'B' && (piece === 'B' || piece === 'BK')));
@@ -80,7 +79,7 @@ export const Board: React.FC = () => {
               >
                 {/* ── Opponent cursor ── */}
                 {oppHover && (
-                  <div className={piece !== '' ? "opponent-cursor-piece-ring" : "opponent-cursor-ring"} />
+                  <div className={piece ? "opponent-cursor-piece-ring" : "opponent-cursor-ring"} />
                 )}
 
                 {/* ── Huff target warning ── */}

@@ -1,5 +1,5 @@
 {
-  "name": "client",
+  "name": "web",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -14,7 +14,9 @@
     "lucide-react": "^1.22.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "zustand": "^5.0.14"
+    "zustand": "^5.0.14",
+    "@checkers/types": "*",
+    "@checkers/shared": "*"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.2",
