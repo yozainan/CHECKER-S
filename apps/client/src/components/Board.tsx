@@ -58,11 +58,12 @@ export const Board: React.FC = () => {
             const selected    = isSelected(r, c);
             const validTarget = isValidTarget(r, c);
             const jumping     = isActiveJumper(r, c);
-            const oppHover    = isOpponentHover(r, c);
-            const huffTarget  = isHuffOffer(r, c) || isHuffWarning(r, c);
             const isMyPiece   = piece !== '' &&
               ((playerColor === 'R' && (piece === 'R' || piece === 'RK')) ||
                (playerColor === 'B' && (piece === 'B' || piece === 'BK')));
+            const isOpponentPiece = piece !== '' && !isMyPiece;
+            const oppHover    = isOpponentHover(r, c) && isOpponentPiece;
+            const huffTarget  = isHuffOffer(r, c) || isHuffWarning(r, c);
 
             let cellClass = `cell ${isDark ? 'dark' : 'light'}`;
             if (selected) cellClass += ' selected-cell';
