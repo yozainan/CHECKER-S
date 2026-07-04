@@ -646,7 +646,7 @@ const startServer = async () => {
   }
 };
 
-if (process.env.NODE_ENV !== 'production' || process.env.STANDALONE === 'true') {
+if (!process.env.VERCEL) {
   startServer();
 }
 
