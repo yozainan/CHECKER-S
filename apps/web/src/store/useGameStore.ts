@@ -236,6 +236,9 @@ function getWebSocketUrl(path: string): string {
     const protocol = backendUrl.startsWith('https://') || backendUrl.startsWith('wss://') ? 'wss:' : 'ws:';
     return `${protocol}//${cleanUrl}${path}`;
   }
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return `ws://localhost:8000${path}`;
+  }
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${window.location.host}${path}`;
 }
